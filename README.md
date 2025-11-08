@@ -1,272 +1,241 @@
 # CashFlow Automator
 
-![Google Apps Script](https://img.shields.io/badge/Google%20Apps%20Script-4285F4?logo=google&logoColor=white)
-![Automation](https://img.shields.io/badge/Automation-00C7B7?logo=automate&logoColor=white)
-![PDF Processing](https://img.shields.io/badge/PDF%20Processing-FF6D01?logo=adobeacrobatreader&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=black)
-![Status](https://img.shields.io/badge/Status-Production-success)
-
 **Automated Cash Closure Processing System for Google Workspace**
 
-> Transforming 2+ hours of daily manual work into 5 minutes of automated processing. Currently handling 500+ monthly reports in production.
+![Google Apps Script](https://img.shields.io/badge/Google%20Apps%20Script-4285F4?logo=google&logoColor=white)
+![Automation](https://img.shields.io/badge/Automation-%2300C7B7)
+![PDF Processing](https://img.shields.io/badge/PDF%20Processing-FF6D01)
+![Productivity](https://img.shields.io/badge/Productivity-8E44AD)
 
 ---
 
-## Table of Contents
+## The Problem & Solution
 
-- [Overview](#overview)
-- [The Problem](#the-problem)
-- [The Solution](#the-solution)
-- [Architecture](#architecture)
-- [Key Features](#key-features)
-- [Performance Metrics](#performance-metrics)
-- [Technical Stack](#technical-stack)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Usage](#usage)
-- [Business Impact](#business-impact)
+**The Problem:** Our finance team was spending 2+ hours daily manually processing cash closure PDFs - extracting data from emails, updating spreadsheets, and organizing files across multiple branches.
+
+**My Solution:** Built a complete automation system that processes **126+ weekly reports automatically**, reducing daily work from **2 hours to 5 minutes** - a **96% time reduction**.
+
+> **Real Impact:** Saved ~110 productive hours monthly that are now used for actual financial analysis instead of data entry.
 
 ---
 
-## Overview
+## What It Does
 
-CashFlow Automator is an enterprise-grade automation system that eliminates manual processing of financial cash closure reports. Built with Google Apps Script, it seamlessly integrates Gmail, Google Drive, and Google Sheets to create an end-to-end automated workflow.
+### Automated PDF Processing
 
-### The Problem
+- **Smart Data Extraction**: Converts PDF reports to structured financial data automatically
+- **Multi-source Handling**: Processes files from both Gmail attachments and Google Drive folders
+- **Automatic Organization**: Sorts and renames files by date, branch, and shift
 
-Financial teams faced significant operational inefficiencies:
+### Reliable Performance
 
-- **2+ hours daily** spent manually processing 20+ PDF cash closure reports
-- Manual data extraction prone to **15% error rate**
-- Inconsistent file organization across team members
-- No scalability - limited by human processing capacity
-- Time-consuming validation and data entry tasks
+- **Batch Processing**: Handles 18 PDFs at once with optimized timing
+- **Error Recovery**: Continues processing even if individual files fail
+- **Progress Tracking**: Live status updates with time estimates
 
-### The Solution
+### Business Logic
 
-An intelligent automation system that:
-
-- Processes **126+ weekly reports automatically**
-- Reduces daily processing time from **2 hours to 5 minutes** (96% reduction)
-- Achieves **<2% error rate** through automated validation
-- Scales to handle **500+ files per day** without additional resources
-- Recovers **110 productive hours monthly** for strategic analysis
+- **Financial Data Mapping**: Extracts sales figures, cash movements, card payments, and closure amounts
+- **Data Validation**: Ensures consistency and flags potential issues
+- **Complete Audit Trail**: Detailed logs of all processing activity
 
 ---
 
-## Architecture
+## Technical Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Input["Input Sources"]
+    subgraph sources[Input Sources]
         A[Gmail Inbox]
-        B[Google Drive Folders]
+        B[Google Drive]
     end
     
-    subgraph Processing["Processing Layer"]
+    subgraph processing[Processing Pipeline]
         C[Email Processor]
-        D[PDF Processing Engine]
-        E[Data Extraction Module]
-        F[Validation Engine]
+        D[PDF to Text Converter]
+        E[Data Extraction Engine]
+        F[Data Validation]
     end
     
-    subgraph Storage["Storage & Organization"]
+    subgraph storage[Storage & Organization]
         G[File Organizer]
-        H[Date-Based Folder Structure]
+        H[Date-Based Folders]
         I[Google Sheets Database]
     end
     
-    subgraph Control["Control & Monitoring"]
-        J[UI Controls]
+    subgraph control[Control System]
+        J[UI Menu Controls]
         K[Batch Scheduler]
         L[Status Monitor]
         M[Error Logger]
     end
     
-    A -->|Automated Polling| C
-    B -->|File Discovery| D
+    A -->|Poll for new emails| C
+    B -->|Scan for PDFs| D
     
-    C -->|Extract Attachments| D
-    D -->|Parse PDF| E
-    E -->|Extract Financial Data| F
+    C -->|Extract attachments| D
+    D -->|Convert to text| E
+    E -->|Parse financial data| F
     
-    F -->|Validate & Transform| I
-    D -->|Move Files| G
-    G -->|Organize| H
+    F -->|Write validated data| I
+    D -->|Move processed files| G
+    G -->|Organize by date| H
     
-    J -->|Configure| K
-    K -->|Schedule Batches| D
-    L -->|Monitor Progress| D
-    M -->|Log Errors| F
+    J -->|Configure processing| K
+    K -->|Schedule batches| D
+    K -->|Monitor execution| L
+    F -->|Log errors| M
     
-    style Input fill:#ea4335,color:#fff
-    style Processing fill:#4285f4,color:#fff
-    style Storage fill:#34a853,color:#fff
-    style Control fill:#fbbc04,color:#000
+    style sources fill:#e3f2fd
+    style processing fill:#f3e5f5
+    style storage fill:#e8f5e9
+    style control fill:#fff3e0
 ```
-
-### System Flow
-
-1. **Ingestion**: Monitors Gmail inbox and Google Drive for new cash closure PDFs
-2. **Processing**: Batch processes files with intelligent scheduling and cooling periods
-3. **Extraction**: Parses PDF content and extracts structured financial data
-4. **Validation**: Applies business rules to ensure data consistency
-5. **Storage**: Writes validated data to Google Sheets and organizes files by date
-6. **Monitoring**: Provides real-time status updates and error tracking
 
 ---
 
-## Key Features
+## Technical Implementation
 
-### Intelligent PDF Processing
+### Core Processing Engine
 
-- **Automated Data Extraction**: Converts unstructured PDF reports into structured financial data
-- **Multi-format Support**: Handles various cash closure report templates
-- **Smart Field Mapping**: Automatically identifies and extracts sales, cash movements, card payments, and closing balances
+The system processes PDFs by converting them to text and extracting structured data:
 
-### Performance Optimization
+```javascript
+function extraerDatosPDF(texto, archivo) {
+  const lineaRazon = texto.split('\n')
+    .find(l => l.toLowerCase().includes('razon social:') && 
+                l.toLowerCase().includes('cafe de barrio')) || '';
+  
+  const sucursal = (lineaRazon.match(/CAFE DE BARRIO\s*[-\s]*(.+)/i) || [])[1]?.trim() || '';
+  
+  const fh = texto.match(/Fecha de cierre:\s*(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})/);
+  const fechaCierre = fh ? fh[1] : '';
+  const horaCierre = fh ? fh[2] : '';
+  const turno = horaCierre && parseInt(horaCierre.split(':')[0], 10) < 16 ? 'Mañana' : 'Tarde';
+  
+  return {
+    archivo,
+    fechaCierre,
+    horaCierre,
+    turno,
+    sucursal,
+    efectivoApertura: capturarImporte(texto, /Efectivo en caja apertura:/i),
+    totalVentas: capturarImporte(texto, /Total de Ventas:/i),
+    efectivo: capturarImporte(texto, /(?:^|\n)\s*Efectivo:/i),
+    tarjetas: capturarImporte(texto, /Tarjetas:/i),
+    qr: capturarImporte(texto, /QR:/i),
+    efectivoCierre: capturarImporte(texto, /Efectivo en (?:caja cierre|cierre de caja):/i),
+    retiroCierre: capturarRetiroCierre(texto)
+  };
+}
+```
 
-- **Batch Processing**: Processes 18 PDFs simultaneously with optimized resource management
-- **Cooling Periods**: Implements delays between batches to respect API rate limits
-- **Error Recovery**: Continues processing remaining files even when individual files fail
-- **Progress Tracking**: Real-time ETA calculations and status updates
+### Smart Batch Processing
 
-### Business Logic
+To handle Google Apps Script's execution limits, I implemented chunked processing:
 
-- **Financial Validation**: Ensures mathematical consistency in extracted data
-- **Branch & Shift Categorization**: Automatically organizes data by location and time period
-- **Audit Trail**: Maintains comprehensive logs of all processing activities
-- **Duplicate Detection**: Prevents reprocessing of already-handled reports
+```javascript
+function procesarSiguienteTanda() {
+  const props = PropertiesService.getScriptProperties();
+  
+  if (props.getProperty('procesamiento_activo') !== 'true') {
+    Logger.log('Processing paused');
+    return;
+  }
+  
+  const tandaActual = parseInt(props.getProperty('tanda_actual') || '1');
+  const totalProcesados = parseInt(props.getProperty('archivos_procesados') || '0');
+  
+  Logger.log(`Batch ${tandaActual} - Total processed: ${totalProcesados}`);
+  
+  // Process files in batches of 18 with 30-second delays
+  const tandaArchivos = obtenerArchivosPendientes(CONFIG.TANDA_SIZE);
+  const resultados = procesarArchivos(tandaArchivos);
+  
+  // Update progress and schedule next batch if needed
+  actualizarProgreso(resultados);
+  programarSiguienteTandaSiNecesario();
+}
+```
 
-### User Experience
+### User-Friendly Controls
 
-- **Custom Menu Interface**: Easy-to-use controls integrated into Google Sheets
-- **Status Dashboard**: Real-time visibility into system performance
-- **Error Notifications**: Immediate alerts for processing failures
-- **Configuration Panel**: Adjustable settings without code modification
+Added custom menus and status monitoring for easy operation:
+
+```javascript
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('PDF Processor')
+    .addItem('Start Processing', 'iniciarProcesamiento')
+    .addItem('View Status', 'verEstado')
+    .addItem('Pause', 'pausar')
+    .addItem('Process Date', 'mostrarDialogoFecha')
+    .addToUi();
+}
+```
 
 ---
 
 ## Performance Metrics
 
-| Metric | Before Automation | After Automation | Improvement |
-|--------|------------------|------------------|-------------|
-| **Daily Processing Time** | 2 hours | 5 minutes | 96% faster |
-| **Weekly Reports Processed** | 126 (manual) | 126 (automated) | 100% automated |
-| **Error Rate** | ~15% | <2% | 87% more accurate |
-| **Processing Capacity** | 20-30 files/day | 500+ files/day | 16x increase |
-| **Monthly Time Saved** | - | 110 hours | - |
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Daily Processing Time | 2 hours | 5 minutes | 96% faster |
+| Weekly Reports Processed | 126 | 126 | 100% automated |
+| Error Rate | ~15% manual entry | <2% automated | 87% more accurate |
+| Monthly Time Savings | 0 hours | 110 hours | Game-changing |
 
 ---
 
-## Technical Stack
+## Technical Skills Demonstrated
 
-### Core Technologies
+### Core Development
 
-- **Google Apps Script**: Primary development platform and runtime environment
-- **JavaScript (ES6+)**: Core programming language
-- **Google Drive API**: File management, organization, and metadata handling
-- **Gmail API**: Automated email processing and attachment extraction
-- **Google Sheets API**: Real-time data synchronization and storage
+- **Google Apps Script Mastery**: Built complete automation solution using Sheets, Drive, and Gmail APIs
+- **API Integration**: Connected multiple Google services seamlessly
+- **Data Processing**: Implemented robust PDF text extraction and parsing
+- **Error Handling**: Made system reliable with smart retry logic
 
-### Design Patterns
+### Problem Solving
 
-- **Modular Architecture**: Separation of concerns for maintainability
-- **Event-Driven Processing**: Trigger-based automation for efficiency
-- **Batch Processing Pattern**: Optimized resource utilization
-- **Error Handling**: Comprehensive try-catch with graceful degradation
+- **Process Analysis**: Identified automation opportunities in manual workflow
+- **Performance Optimization**: Worked within platform limits using batch processing
+- **Debugging Skills**: Solved issues with PDF parsing and data extraction
+- **User Experience**: Designed intuitive controls and status monitoring
 
 ---
 
-## Installation
+## What I Learned
+
+- How to build production-ready automation systems
+- Importance of comprehensive logging and error tracking
+- Balancing automation speed with data accuracy
+- Managing multiple API integrations effectively
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- Google Workspace account with admin access
-- Google Sheets with appropriate financial template
-- Gmail inbox configured for cash closure reports
-- Google Drive folder structure set up
+- Google Workspace account
+- Google Sheets with financial template
+- Gmail access for email processing
 
-### Setup Steps
-
-1. **Create Apps Script Project**
-   ```
-   Navigate to script.google.com
-   Create new project
-   Name it "CashFlow Automator"
-   ```
-
-2. **Deploy Script Files**
-   - Copy all files from `src/` directory
-   - Paste into corresponding script files
-   - Save and authorize required permissions
-
-3. **Configure Settings**
-   ```javascript
-   // Update CONFIG object in core-engine.js
-   const CONFIG = {
-     SHEET_NAME: 'Your_Sheet_Name',
-     DRIVE_FOLDER_ID: 'your_folder_id',
-     // ... other settings
-   };
-   ```
-
-4. **Set Up Triggers**
-   - Configure time-driven triggers for automated processing
-   - Set appropriate execution frequency
-
-5. **Initialize System**
-   ```javascript
-   // Run once to set up folder structure
-   initializeSystem();
-   ```
-
----
-
-## Usage
-
-### Basic Commands
+### Basic Usage
 
 ```javascript
 // Start full automated processing
-startProcessing();
+iniciarProcesamiento();
 
-// Process specific date folder
-processDateFolder("2025-07-22");
+// Process specific date
+procesarCarpeta("2025-07-22");
 
-// Process only Gmail attachments
-processEmailAttachments();
+// Check system status
+verEstado();
 
-// View current system status
-viewStatus();
-
-// Generate processing report
-generateReport();
-```
-
-### Configuration Options
-
-```javascript
-const CONFIG = {
-  // Sheet Configuration
-  SHEET_NAME: 'Financial_Dashboard_2025',
-  START_ROW: 2,
-  
-  // Processing Settings
-  PROCESSING_BATCH_SIZE: 18,
-  DELAY_BETWEEN_BATCHES: 30, // seconds
-  MAX_RETRY_ATTEMPTS: 3,
-  
-  // Feature Flags
-  EMAIL_PROCESSING_ENABLED: true,
-  AUTO_ORGANIZATION: true,
-  VALIDATION_STRICT_MODE: false,
-  
-  // File Management
-  ARCHIVE_AFTER_DAYS: 90,
-  CLEANUP_ENABLED: true
-};
+// Process from spreadsheet cell
+// Add "FECHA_PROCESAR: 2025-07-22" in column A
 ```
 
 ---
@@ -274,93 +243,56 @@ const CONFIG = {
 ## Project Structure
 
 ```
-cashflow-automator/
-├── README.md
-├── LICENSE
-├── .gitignore
-├── src/
-│   ├── core-engine.js          # Main processing logic & orchestration
-│   ├── email-processor.js      # Gmail integration & attachment handling
-│   ├── pdf-parser.js            # PDF content extraction
-│   ├── data-extractor.js        # Financial data parsing & mapping
-│   ├── validator.js             # Data validation & business rules
-│   ├── spreadsheet-sync.js     # Google Sheets integration
-│   ├── file-organizer.js       # Drive file management
-│   ├── batch-scheduler.js      # Processing queue management
-│   ├── ui-controls.js          # User interface & menus
-│   ├── logger.js               # Error tracking & audit logs
-│   └── config.js               # Configuration management
-├── docs/
-│   ├── architecture.md
-│   ├── api-reference.md
-│   └── deployment-guide.md
-└── examples/
-    ├── sample-config.js
-    └── sample-report.pdf
+src/
+├── core-engine.js          # Main processing logic & batch system
+├── email-processor.js      # Gmail integration & automation
+├── spreadsheet-sync.js     # Google Sheets data management
+├── file-organizer.js       # Drive structure & organization
+└── ui-controls.js          # User interface & monitoring
 ```
 
 ---
 
-## Business Impact
+## Business Value
 
-### Time Savings
+### Time & Efficiency
 
-- **Daily**: 1 hour 55 minutes recovered per user
-- **Weekly**: 9.5 hours of productive time gained
-- **Monthly**: 38 hours redirected to strategic analysis
-- **Annually**: 456 hours of human labor eliminated
+- Daily: 1 hour 55 minutes recovered per team member
+- Weekly: 9.5 hours redirected to value-added analysis
+- Monthly: 38 hours of productive time gained
 
-### Quality Improvements
+### Quality & Accuracy
 
-- **87% reduction in data entry errors**
-- **100% consistency** in file organization
-- **Automated validation** catches discrepancies in real-time
-- **Complete audit trail** for compliance and review
+- Reduced Errors: Automated validation catches inconsistencies
+- Consistent Formatting: Standardized data across all locations
+- Reliable Processing: Handles 500+ monthly reports without fail
 
-### Scalability Benefits
+### Scalability
 
-- Handles volume spikes without additional resources
-- Onboards new team members in minutes instead of days
-- Adapts to process changes with minimal configuration
-- Supports business growth without proportional cost increase
-
-### ROI Considerations
-
-- **Immediate productivity gains**: 96% reduction in processing time
-- **Quality cost savings**: Reduced error correction overhead
-- **Scalability value**: No marginal cost per additional report
-- **Opportunity cost recovery**: 110 hours/month for strategic work
+- Volume Handling: Processes spikes in report volume effortlessly
+- Easy Maintenance: Modular design makes updates straightforward
+- Team Onboarding: New members can use it immediately
 
 ---
 
-## Skills Demonstrated
+## Next Improvements
 
-This project showcases proficiency in:
+### Planned Enhancements
 
-- **Process Automation**: Identifying and eliminating manual workflows
-- **API Integration**: Orchestrating multiple Google Workspace services
-- **Data Engineering**: Extracting, transforming, and loading financial data
-- **Software Architecture**: Designing scalable, maintainable systems
-- **Business Analysis**: Understanding financial operations and requirements
-- **Problem Solving**: Addressing real-world operational challenges
-- **JavaScript Development**: Advanced ES6+ features and async programming
-- **Error Handling**: Building resilient systems with comprehensive logging
+- Add unit tests for core data extraction functions
+- Create web-based configuration dashboard
+- Implement email notifications for processing completion
+- Add data validation rules for financial consistency
 
----
+### Technical Growth
 
-## License
+This project showed me the importance of:
 
-This project is proprietary software developed for internal business operations.
-
----
-
-## Contact
-
-For questions or collaboration opportunities, please reach out through my portfolio or LinkedIn.
+- Testing: Building reliable systems requires good tests
+- Documentation: Making complex systems understandable
+- User Feedback: Building what people actually need
+- Iterative Development: Starting simple and adding features
 
 ---
 
-**Built with Google Apps Script | Deployed in Production | Processing 500+ Monthly Reports**
-
-## Experimentos
-- Branch creada el: 11/7/2025
+**Built with Google Apps Script • Deployed in production • Processing 500+ monthly reports**
