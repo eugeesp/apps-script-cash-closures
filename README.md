@@ -1,3 +1,5 @@
+![GitHub last commit](https://img.shields.io/github/last-commit/eugeesp/cashflow-automator)
+![GitHub code size](https://img.shields.io/github/languages/code-size/eugeesp/cashflow-automator)
 # CashFlow Automator
 
 **Automated Cash Closure Processing System for Google Workspace**
