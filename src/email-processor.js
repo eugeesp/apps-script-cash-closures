@@ -1,459 +1,442 @@
 /**
- * CashFlow Automator - Email Processing System
- * Handles Gmail integration, attachment processing, and file organization
+ * CashFlow Automator - Spreadsheet Integration System
+ * Handles Google Sheets synchronization, data updates, and validation
  * @version 2.1.0
  */
 
-/* ==================== EMAIL PROCESSING FUNCTIONS ==================== */
+/* ==================== SPREADSHEET SYNC FUNCTIONS ==================== */
 
 /**
- * Main function to process emails within a date range
- * @param {string} fechaDesde - Start date (YYYY/MM/DD)
- * @param {string} fechaHasta - End date (YYYY/MM/DD)
- * @param {boolean} forzarReproceso - Whether to force reprocessing
- * @returns {Object} Processing results and statistics
+ * Updates Google Sheets with extracted financial data
+ * @param {Array} rows - Array of extracted data objects
  */
-function procesarCorreos(fechaDesde, fechaHasta, forzarReproceso = false) {
-  const tiempoInicio = Date.now();
-  Logger.log('Processing emails from ' + fechaDesde + ' to ' + fechaHasta + (forzarReproceso ? ' (FORCED)' : ''));
-  
-  const carpetaDestino = DriveApp.getFolderById(CONFIG.CARPETA_DESTINO_ID);
-  
-  // Initialize processing index
-  const { archivoIndex, correosYaProcesados } = inicializarIndice(carpetaDestino);
-  Logger.log('Emails already in index: ' + correosYaProcesados.size);
-  
-  // Build cache of existing files
-  const archivosExistentesCache = construirCacheArchivosExistentes(carpetaDestino);
-  Logger.log('Files in cache: ' + archivosExistentesCache.size);
-  
-  // Prepare search query
-  const fechaHastaAjustada = ajustarFechaHasta(fechaHasta);
-  const query = 'subject:"Reporte de Cierre de Caja" has:attachment filename:pdf after:' + fechaDesde + ' before:' + fechaHastaAjustada;
-  Logger.log('Search query: ' + query);
-  
-  const hilos = GmailApp.search(query);
-  Logger.log('Threads found: ' + hilos.length);
-  
-  if (hilos.length === 0) {
-    Logger.log('No emails found in this date range');
-    return crearResumenVacio();
+function updateSpreadsheet(rows) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    Logger.log('Sheet not found: ' + CONFIG.SHEET_NAME);
+    return;
   }
   
-  // Process email threads
-  const resultado = procesarHilos(hilos, correosYaProcesados, archivosExistentesCache, carpetaDestino, archivoIndex, forzarReproceso, tiempoInicio);
+  const allData = sheet.getDataRange().getValues();
+  const headers = allData[0];
+  const dataRows = allData.slice(1);
   
-  // Final summary
-  mostrarResumen(resultado);
-  return resultado;
-}
-
-/**
- * Processes specific date emails (convenience function)
- * @returns {Object} Processing results
- */
-function procesarMisFechas() {
-  // Configure date range for processing
-  const fechaDesde = "2025/07/05";
-  const fechaHasta = "2025/07/05";
+  const columnIndex = {};
+  headers.forEach((header, index) => {
+    columnIndex[header] = index;
+  });
   
-  return procesarCorreos(fechaDesde, fechaHasta);
-}
-
-/**
- * Reprocesses emails for a specific date
- * @param {string} fecha - Date to reprocess (YYYY/MM/DD)
- * @param {boolean} eliminarDelIndice - Whether to remove from index first
- * @returns {Object} Reprocessing results
- */
-function reprocesarCorreosFecha(fecha, eliminarDelIndice = true) {
-  Logger.log('=== REPROCESSING DATE: ' + fecha + ' ===');
+  const rowMap = new Map();
+  dataRows.forEach((row, rowIndex) => {
+    const key = normalizeDate(row[columnIndex['Date']]) + '|' + row[columnIndex['Shift']] + '|' + row[columnIndex['Branch']];
+    rowMap.set(key, rowIndex + 2);
+  });
   
-  if (eliminarDelIndice) {
-    const carpetaDestino = DriveApp.getFolderById(CONFIG.CARPETA_DESTINO_ID);
-    const { archivoIndex } = inicializarIndice(carpetaDestino);
+  const updates = [];
+  
+  rows.forEach(rowData => {
+    const key = normalizeDate(rowData.closureDate) + '|' + rowData.shift + '|' + rowData.branch;
+    const sheetRow = rowMap.get(key);
     
-    // Remove existing entries for this date
-    let contenido = archivoIndex.getBlob().getDataAsString();
-    const lineasOriginales = contenido.split('\n').length - 1;
+    if (!sheetRow) {
+      Logger.log('Row not found for: ' + key);
+      return;
+    }
     
-    const fechaFormateada = fecha.replace(/\//g, '-');
-    const lineasFiltradas = contenido.split('\n')
-      .filter(linea => !linea.includes(fechaFormateada))
-      .filter(linea => linea.trim() !== '');
+    const fieldMappings = [
+      ['openingCash', 'Opening Cash'],
+      ['cashSales', 'Cash Sales'],
+      ['totalSales', 'Total Sales'],
+      ['cardSales', 'Card Payments'],
+      ['digitalPayments', 'Digital Payments'],
+      ['closingCash', 'Closing Cash'],
+      ['cashWithdrawal', 'Cash Withdrawal']
+    ];
     
-    // Rewrite index file
-    archivoIndex.setContent(lineasFiltradas.join('\n') + '\n');
-    const lineasEliminadas = lineasOriginales - lineasFiltradas.length;
-    Logger.log('Removed ' + lineasEliminadas + ' entries from index');
-  }
-  
-  // Process normally
-  return procesarCorreos(fecha, fecha, true);
-}
-
-/**
- * Diagnoses email processing issues
- * @param {string} fechaDesde - Start date
- * @param {string} fechaHasta - End date
- * @returns {Array} Problematic emails found
- */
-function diagnosticarCorreosProblematicos(fechaDesde, fechaHasta) {
-  Logger.log('=== EMAIL DIAGNOSIS ===');
-  
-  const carpetaDestino = DriveApp.getFolderById(CONFIG.CARPETA_DESTINO_ID);
-  const { correosYaProcesados } = inicializarIndice(carpetaDestino);
-  const archivosExistentesCache = construirCacheArchivosExistentes(carpetaDestino);
-  
-  const fechaHastaAjustada = ajustarFechaHasta(fechaHasta);
-  const query = 'subject:"Reporte de Cierre de Caja" has:attachment filename:pdf after:' + fechaDesde + ' before:' + fechaHastaAjustada;
-  const hilos = GmailApp.search(query);
-  
-  const problematicos = [];
-  
-  hilos.forEach((hilo, hiloIndex) => {
-    hilo.getMessages().forEach(mensaje => {
-      const correoId = generarIdCorreo(mensaje);
-      const asunto = mensaje.getSubject().trim();
-      const match = asunto.match(CONFIG.REGEX_ASUNTO);
-      
-      if (!match) {
-        problematicos.push({
-          tipo: 'INVALID_FORMAT',
-          correoId: correoId,
-          asunto: asunto,
-          fecha: mensaje.getDate()
-        });
-        return;
-      }
-      
-      const nombreArchivo = generarNombreArchivo(match, 0, 1);
-      const enIndice = correosYaProcesados.has(correoId);
-      const archivoExiste = archivosExistentesCache.has(nombreArchivo);
-      
-      if (enIndice && !archivoExiste) {
-        problematicos.push({
-          tipo: 'INDEXED_BUT_MISSING_FILE',
-          correoId: correoId,
-          asunto: asunto,
-          nombreArchivo: nombreArchivo,
-          fecha: mensaje.getDate()
-        });
+    fieldMappings.forEach(([dataField, sheetColumn]) => {
+      if (rowData[dataField] && columnIndex[sheetColumn] !== undefined) {
+        const colIndex = columnIndex[sheetColumn];
+        const existingValue = dataRows[sheetRow - 2][colIndex];
+        
+        if (!existingValue || existingValue === 0 || existingValue === '') {
+          updates.push({
+            row: sheetRow,
+            column: colIndex + 1,
+            value: convertArgentineNumber(rowData[dataField])
+          });
+        }
       }
     });
   });
   
-  Logger.log('=== DIAGNOSIS COMPLETE ===');
-  Logger.log('Emails analyzed: ' + hilos.reduce((sum, h) => sum + h.getMessageCount(), 0));
-  Logger.log('Problematic emails: ' + problematicos.length);
+  // Apply updates to spreadsheet
+  if (updates.length > 0) {
+    applySpreadsheetUpdates(sheet, updates);
+    
+    // Highlight updated rows
+    const updatedRows = [...new Set(updates.map(u => u.row))];
+    highlightUpdatedRows(sheet, updatedRows, headers.length);
+    
+    Logger.log('Applied ' + updates.length + ' updates to spreadsheet');
+  } else {
+    Logger.log('No updates needed - all data already present');
+  }
+}
+
+/**
+ * Applies updates to the spreadsheet in batch
+ * @param {Sheet} sheet - Google Sheet
+ * @param {Array} updates - Array of update objects
+ */
+function applySpreadsheetUpdates(sheet, updates) {
+  // Group updates by row for efficiency
+  const updatesByRow = new Map();
   
-  problematicos.forEach((problema, i) => {
-    Logger.log((i + 1) + '. ' + problema.tipo + ':');
-    Logger.log('   Subject: ' + problema.asunto);
-    Logger.log('   Date: ' + problema.fecha.toLocaleDateString());
-    if (problema.nombreArchivo) {
-      Logger.log('   Expected file: ' + problema.nombreArchivo);
+  updates.forEach(({row, column, value}) => {
+    if (!updatesByRow.has(row)) {
+      updatesByRow.set(row, []);
+    }
+    updatesByRow.get(row).push({column, value});
+  });
+  
+  // Apply updates row by row
+  for (const [row, rowUpdates] of updatesByRow) {
+    rowUpdates.forEach(({column, value}) => {
+      sheet.getRange(row, column).setValue(value);
+    });
+  }
+}
+
+/**
+ * Highlights updated rows in the spreadsheet
+ * @param {Sheet} sheet - Google Sheet
+ * @param {Array} updatedRows - Array of modified row numbers
+ * @param {number} numColumns - Number of columns to highlight
+ */
+function highlightUpdatedRows(sheet, updatedRows, numColumns) {
+  updatedRows.forEach(row => {
+    sheet.getRange(row, 1, 1, numColumns).setBackground('#E8F5E8');
+  });
+  Logger.log('Highlighted ' + updatedRows.length + ' updated rows');
+}
+
+/**
+ * Finds or creates row for financial data
+ * @param {Object} data - Financial data object
+ * @returns {number} Row number where data should be placed
+ */
+function findOrCreateRow(data) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return -1;
+  
+  const allData = sheet.getDataRange().getValues();
+  const headers = allData[0];
+  const dataRows = allData.slice(1);
+  
+  const columnIndex = {};
+  headers.forEach((header, index) => {
+    columnIndex[header] = index;
+  });
+  
+  const normalizedDate = normalizeDate(data.closureDate);
+  const searchKey = normalizedDate + '|' + data.shift + '|' + data.branch;
+  
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const rowKey = normalizeDate(row[columnIndex['Date']]) + '|' + row[columnIndex['Shift']] + '|' + row[columnIndex['Branch']];
+    
+    if (rowKey === searchKey) {
+      return i + 2; // +2 because data starts at row 2 (headers + 1-indexing)
+    }
+  }
+  
+  // Row not found - would need to create new row
+  Logger.log('Row not found for: ' + searchKey);
+  return -1;
+}
+
+/**
+ * Validates financial data before updating spreadsheet
+ * @param {Object} data - Financial data to validate
+ * @returns {Object} Validation result {isValid: boolean, errors: Array}
+ */
+function validateFinancialData(data) {
+  const errors = [];
+  
+  // Required fields validation
+  if (!data.closureDate) {
+    errors.push('Missing closure date');
+  }
+  
+  if (!data.branch) {
+    errors.push('Missing branch information');
+  }
+  
+  if (!data.shift) {
+    errors.push('Missing shift information');
+  }
+  
+  // Financial data validation
+  if (data.totalSales) {
+    const sales = convertArgentineNumber(data.totalSales);
+    if (sales < 0) {
+      errors.push('Total sales cannot be negative');
+    }
+  }
+  
+  if (data.openingCash && data.closingCash) {
+    const opening = convertArgentineNumber(data.openingCash);
+    const closing = convertArgentineNumber(data.closingCash);
+    
+    if (opening < 0 || closing < 0) {
+      errors.push('Cash amounts cannot be negative');
+    }
+  }
+  
+  // Data consistency checks
+  if (data.cashSales && data.cardSales && data.totalSales) {
+    const cash = convertArgentineNumber(data.cashSales) || 0;
+    const cards = convertArgentineNumber(data.cardSales) || 0;
+    const digital = convertArgentineNumber(data.digitalPayments) || 0;
+    const totalSales = convertArgentineNumber(data.totalSales) || 0;
+    
+    const paymentMethodsSum = cash + cards + digital;
+    const difference = Math.abs(paymentMethodsSum - totalSales);
+    
+    // Allow small rounding differences
+    if (difference > 1) {
+      errors.push('Payment methods sum (' + paymentMethodsSum + ') doesn\'t match total sales (' + totalSales + ')');
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors: errors
+  };
+}
+
+/**
+ * Gets spreadsheet statistics and metrics
+ * @returns {Object} Spreadsheet statistics
+ */
+function getSpreadsheetStats() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    return { error: 'Sheet not found' };
+  }
+  
+  const allData = sheet.getDataRange().getValues();
+  const headers = allData[0];
+  const dataRows = allData.slice(1);
+  
+  const columnIndex = {};
+  headers.forEach((header, index) => {
+    columnIndex[header] = index;
+  });
+  
+  const stats = {
+    totalRows: dataRows.length,
+    totalBranches: new Set(dataRows.map(row => row[columnIndex['Branch']])).size,
+    dateRange: {
+      min: null,
+      max: null
+    },
+    completedRows: 0,
+    incompleteRows: 0
+  };
+  
+  // Calculate date range and completion stats
+  const dates = [];
+  dataRows.forEach(row => {
+    const date = row[columnIndex['Date']];
+    if (date) {
+      dates.push(new Date(date));
+    }
+    
+    // Check if row is complete (has all financial data)
+    const hasFinancialData = row[columnIndex['Total Sales']] && 
+                            row[columnIndex['Cash Sales']] && 
+                            row[columnIndex['Closing Cash']];
+    
+    if (hasFinancialData) {
+      stats.completedRows++;
+    } else {
+      stats.incompleteRows++;
     }
   });
   
-  return problematicos;
-}
-
-/* ==================== EMAIL PROCESSING UTILITIES ==================== */
-
-/**
- * Initializes or loads the processing index
- * @param {Folder} carpetaDestino - Destination folder
- * @returns {Object} Index file and processed emails set
- */
-function inicializarIndice(carpetaDestino) {
-  let archivoIndex = null;
-  const archivos = carpetaDestino.getFilesByName(CONFIG.NOMBRE_INDEX);
-  
-  if (archivos.hasNext()) {
-    archivoIndex = archivos.next();
-  } else {
-    archivoIndex = carpetaDestino.createFile(CONFIG.NOMBRE_INDEX, "", MimeType.PLAIN_TEXT);
+  if (dates.length > 0) {
+    stats.dateRange.min = new Date(Math.min(...dates.map(d => d.getTime())));
+    stats.dateRange.max = new Date(Math.max(...dates.map(d => d.getTime())));
   }
   
-  const contenidoIndex = archivoIndex.getBlob().getDataAsString();
-  const correosYaProcesados = new Set(
-    contenidoIndex.split('\n')
-      .map(l => l.trim())
-      .filter(l => l !== "")
-  );
+  stats.completionRate = stats.totalRows > 0 ? (stats.completedRows / stats.totalRows * 100).toFixed(1) + '%' : '0%';
   
-  return { archivoIndex, correosYaProcesados };
+  return stats;
 }
 
 /**
- * Adjusts end date for Gmail search (exclusive boundary)
- * @param {string} fechaHasta - Original end date
- * @returns {string} Adjusted end date
+ * Logs spreadsheet statistics for monitoring
  */
-function ajustarFechaHasta(fechaHasta) {
-  const fechaHastaObj = new Date(fechaHasta);
-  fechaHastaObj.setDate(fechaHastaObj.getDate() + 1);
-  return fechaHastaObj.toISOString().split('T')[0].replace(/-/g, '/');
-}
-
-/**
- * Generates unique ID for email tracking
- * @param {GmailMessage} mensaje - Gmail message
- * @returns {string} Unique email ID
- */
-function generarIdCorreo(mensaje) {
-  const fechaRecepcion = mensaje.getDate();
-  const asunto = mensaje.getSubject().trim();
-  return fechaRecepcion.getTime() + '_' + asunto.replace(/[^\w\s-]/g, '').substring(0, 50);
-}
-
-/**
- * Generates standardized filename for attachments
- * @param {Array} match - Regex match results
- * @param {number} index - Attachment index
- * @param {number} totalAdjuntos - Total attachments
- * @returns {string} Generated filename
- */
-function generarNombreArchivo(match, index, totalAdjuntos) {
-  const razon = match[1].trim().replace(/\s+/g, "_");
-  const [dia, mes, anio] = match[2].split("/");
-  const hora = parseInt(match[3].split(":")[0], 10);
-  const turno = hora < CONFIG.HORA_CORTE_TURNO ? "MANANA" : "TARDE";
-  const fechaFormateada = anio + '-' + mes + '-' + dia;
-  const sufijo = totalAdjuntos > 1 ? '_A' + (index + 1) : '';
+function logSpreadsheetStats() {
+  const stats = getSpreadsheetStats();
   
-  return razon + '_' + fechaFormateada + '_' + turno + sufijo + '.pdf';
+  Logger.log('=== SPREADSHEET STATISTICS ===');
+  Logger.log('Total rows: ' + stats.totalRows);
+  Logger.log('Branches: ' + stats.totalBranches);
+  
+  if (stats.dateRange.min && stats.dateRange.max) {
+    Logger.log('Date range: ' + stats.dateRange.min.toLocaleDateString() + ' to ' + stats.dateRange.max.toLocaleDateString());
+  }
+  
+  Logger.log('Completed rows: ' + stats.completedRows);
+  Logger.log('Incomplete rows: ' + stats.incompleteRows);
+  Logger.log('Completion rate: ' + stats.completionRate);
 }
 
 /**
- * Processes email threads and extracts attachments
- * @param {Array} hilos - Gmail threads to process
- * @param {Set} correosYaProcesados - Set of already processed emails
- * @param {Set} archivosExistentesCache - Cache of existing files
- * @param {Folder} carpetaDestino - Destination folder
- * @param {File} archivoIndex - Index file
- * @param {boolean} forzarReproceso - Whether to force reprocessing
- * @param {number} tiempoInicio - Processing start time
- * @returns {Object} Processing results and statistics
+ * Creates backup of current spreadsheet state
+ * @returns {string} Backup creation timestamp
  */
-function procesarHilos(hilos, correosYaProcesados, archivosExistentesCache, carpetaDestino, archivoIndex, forzarReproceso, tiempoInicio) {
-  const nuevosProcesados = [];
-  let archivosCreados = [];
-  let estadisticas = {
-    correosEncontrados: 0,
-    correosYaProcesados: 0,
-    correosNuevosProcesados: 0,
-    archivosCreados: 0,
-    archivosYaExistentes: 0,
-    errores: 0
-  };
+function createSpreadsheetBackup() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(CONFIG.SHEET_NAME);
+  
+  if (!sheet) {
+    Logger.log('Sheet not found for backup');
+    return null;
+  }
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupName = CONFIG.SHEET_NAME + '_backup_' + timestamp;
   
   try {
-    for (let hiloIndex = 0; hiloIndex < hilos.length; hiloIndex++) {
-      // Execution time check
-      if (Date.now() - tiempoInicio > CONFIG.MAX_TIEMPO_EJECUCION) {
-        Logger.log('Time limit reached, saving progress...');
-        break;
-      }
-      
-      const hilo = hilos[hiloIndex];
-      Logger.log('Processing thread ' + (hiloIndex + 1) + '/' + hilos.length);
-      
-      hilo.getMessages().forEach(mensaje => {
-        estadisticas.correosEncontrados++;
-        const correoId = generarIdCorreo(mensaje);
-        const asunto = mensaje.getSubject().trim();
-        
-        // Skip if already processed (unless forced)
-        if (!forzarReproceso && correosYaProcesados.has(correoId)) {
-          estadisticas.correosYaProcesados++;
-          return;
-        }
-        
-        Logger.log((forzarReproceso ? 'Reprocessing' : 'Processing') + ': ' + asunto + ' - ' + mensaje.getDate().toLocaleDateString());
-        
-        const match = asunto.match(CONFIG.REGEX_ASUNTO);
-        if (!match) {
-          Logger.log('Invalid format: ' + asunto);
-          estadisticas.errores++;
-          return;
-        }
-        
-        try {
-          const adjuntos = mensaje.getAttachments();
-          const pdfAdjuntos = adjuntos.filter(archivo => archivo.getContentType() === MimeType.PDF);
-          
-          if (pdfAdjuntos.length === 0) {
-            Logger.log('No PDF attachments found');
-            return;
-          }
-          
-          let archivosDelMensaje = [];
-          let algunArchivoCreado = false;
-          
-          pdfAdjuntos.forEach((archivo, index) => {
-            const nuevoNombre = generarNombreArchivo(match, index, pdfAdjuntos.length);
-            
-            if (!forzarReproceso && archivosExistentesCache.has(nuevoNombre)) {
-              Logger.log('File already exists: ' + nuevoNombre);
-              estadisticas.archivosYaExistentes++;
-            } else {
-              carpetaDestino.createFile(archivo.copyBlob().setName(nuevoNombre));
-              archivosDelMensaje.push(nuevoNombre);
-              algunArchivoCreado = true;
-              Logger.log((forzarReproceso ? 'Recreated' : 'Created') + ': ' + nuevoNombre);
-            }
-          });
-          
-          // Only mark as processed if files were created
-          if (algunArchivoCreado) {
-            nuevosProcesados.push(correoId);
-            archivosCreados.push(...archivosDelMensaje);
-            estadisticas.correosNuevosProcesados++;
-            estadisticas.archivosCreados += archivosDelMensaje.length;
-            
-            // Batch index updates
-            if (nuevosProcesados.length >= CONFIG.LOTE_SIZE) {
-              escribirLoteAlIndice(archivoIndex, nuevosProcesados, correosYaProcesados);
-              nuevosProcesados.length = 0;
-            }
-          } else if (forzarReproceso) {
-            // In forced mode, mark as processed even if no files created
-            nuevosProcesados.push(correoId);
-            estadisticas.correosNuevosProcesados++;
-          }
-        } catch (error) {
-          Logger.log('Error processing: ' + error.message);
-          estadisticas.errores++;
-        }
-      });
-    }
-    
-    // Final batch write
-    if (nuevosProcesados.length > 0) {
-      escribirLoteAlIndice(archivoIndex, nuevosProcesados, correosYaProcesados);
-    }
+    // Create backup by copying the sheet
+    sheet.copyTo(spreadsheet).setName(backupName);
+    Logger.log('Backup created: ' + backupName);
+    return timestamp;
   } catch (error) {
-    Logger.log('PROCESSING ERROR: ' + error.message);
-    // Save progress on error
-    if (nuevosProcesados.length > 0) {
-      try {
-        escribirLoteAlIndice(archivoIndex, nuevosProcesados, correosYaProcesados);
-        Logger.log('Progress saved before error');
-      } catch (recoveryError) {
-        Logger.log('Save error: ' + recoveryError.message);
+    Logger.log('Backup failed: ' + error.message);
+    return null;
+  }
+}
+
+/**
+ * Exports processing data to CSV for external analysis
+ * @returns {string} CSV data as string
+ */
+function exportDataToCSV() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return '';
+  
+  const data = sheet.getDataRange().getValues();
+  const csvContent = data.map(row => 
+    row.map(cell => {
+      // Handle cells that might contain commas or quotes
+      if (typeof cell === 'string' && (cell.includes(',') || cell.includes('"'))) {
+        return '"' + cell.replace(/"/g, '""') + '"';
       }
-    }
-    throw error;
-  }
+      return cell;
+    }).join(',')
+  ).join('\n');
   
-  return { estadisticas, archivosCreados };
+  return csvContent;
 }
 
 /**
- * Writes batch of processed emails to index
- * @param {File} archivoIndex - Index file
- * @param {Array} nuevosProcesados - Newly processed email IDs
- * @param {Set} correosYaProcesados - Processed emails set
+ * Checks for data anomalies in the spreadsheet
+ * @returns {Array} Array of detected anomalies
  */
-function escribirLoteAlIndice(archivoIndex, nuevosProcesados, correosYaProcesados) {
-  const contenidoActual = archivoIndex.getBlob().getDataAsString();
-  const nuevoContenido = contenidoActual + nuevosProcesados.join("\n") + "\n";
-  archivoIndex.setContent(nuevoContenido);
-  nuevosProcesados.forEach(id => correosYaProcesados.add(id));
-  Logger.log('Batch saved: ' + nuevosProcesados.length + ' emails');
-}
-
-/**
- * Shows processing summary
- * @param {Object} resultado - Processing results
- */
-function mostrarResumen(resultado) {
-  const { estadisticas } = resultado;
+function findDataAnomalies() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return [];
   
-  Logger.log('=== PROCESSING SUMMARY ===');
-  Logger.log('Emails found: ' + estadisticas.correosEncontrados);
-  Logger.log('Already processed: ' + estadisticas.correosYaProcesados);
-  Logger.log('Newly processed: ' + estadisticas.correosNuevosProcesados);
-  Logger.log('Files created: ' + estadisticas.archivosCreados);
-  Logger.log('Files already existed: ' + estadisticas.archivosYaExistentes);
-  Logger.log('Errors: ' + estadisticas.errores);
-}
-
-/**
- * Creates empty summary for no results
- * @returns {Object} Empty results structure
- */
-function crearResumenVacio() {
-  return {
-    estadisticas: {
-      correosEncontrados: 0,
-      correosYaProcesados: 0,
-      correosNuevosProcesados: 0,
-      archivosCreados: 0,
-      archivosYaExistentes: 0,
-      errores: 0
-    },
-    archivosCreados: []
-  };
-}
-
-/* ==================== FILE CACHE SYSTEM ==================== */
-
-/**
- * Builds cache of existing files for duplicate detection
- * @param {Folder} carpetaDestino - Destination folder
- * @returns {Set} Set of existing filenames
- */
-function construirCacheArchivosExistentes(carpetaDestino) {
-  const cache = new Set();
+  const allData = sheet.getDataRange().getValues();
+  const headers = allData[0];
+  const dataRows = allData.slice(1);
   
-  // Root folder files
-  const archivosRaiz = carpetaDestino.getFilesByType(MimeType.PDF);
-  while (archivosRaiz.hasNext()) {
-    cache.add(archivosRaiz.next().getName());
-  }
+  const columnIndex = {};
+  headers.forEach((header, index) => {
+    columnIndex[header] = index;
+  });
   
-  // Subfolder files (date-based organization)
-  const subcarpetas = carpetaDestino.getFolders();
-  let subcarpetasEscaneadas = 0;
+  const anomalies = [];
   
-  while (subcarpetas.hasNext()) {
-    const subcarpeta = subcarpetas.next();
-    const nombreSubcarpeta = subcarpeta.getName();
+  dataRows.forEach((row, index) => {
+    const rowNumber = index + 2;
     
-    // Only scan date-formatted folders (yyyy-mm-dd)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(nombreSubcarpeta)) {
-      const archivosSubcarpeta = subcarpeta.getFilesByType(MimeType.PDF);
-      let archivosEnSubcarpeta = 0;
+    // Check for negative values where they shouldn't exist
+    const positiveFields = ['Total Sales', 'Cash Sales', 'Opening Cash', 'Closing Cash'];
+    positiveFields.forEach(field => {
+      if (columnIndex[field] !== undefined && row[columnIndex[field]] < 0) {
+        anomalies.push({
+          type: 'NEGATIVE_VALUE',
+          field: field,
+          row: rowNumber,
+          value: row[columnIndex[field]],
+          message: 'Negative value in ' + field
+        });
+      }
+    });
+    
+    // Check for unusually high or low values
+    if (columnIndex['Total Sales'] !== undefined && row[columnIndex['Total Sales']] > 0) {
+      const sales = row[columnIndex['Total Sales']];
       
-      while (archivosSubcarpeta.hasNext()) {
-        cache.add(archivosSubcarpeta.next().getName());
-        archivosEnSubcarpeta++;
+      // Example threshold - adjust based on business logic
+      if (sales > 100000) {
+        anomalies.push({
+          type: 'UNUSUALLY_HIGH',
+          field: 'Total Sales',
+          row: rowNumber,
+          value: sales,
+          message: 'Unusually high sales amount'
+        });
       }
       
-      subcarpetasEscaneadas++;
-      if (archivosEnSubcarpeta > 0) {
-        Logger.log(nombreSubcarpeta + ': ' + archivosEnSubcarpeta + ' files');
+      if (sales < 100) {
+        anomalies.push({
+          type: 'UNUSUALLY_LOW',
+          field: 'Total Sales',
+          row: rowNumber,
+          value: sales,
+          message: 'Unusually low sales amount'
+        });
       }
     }
-  }
+    
+    // Check data consistency between related fields
+    if (columnIndex['Opening Cash'] !== undefined && columnIndex['Closing Cash'] !== undefined) {
+      const opening = row[columnIndex['Opening Cash']] || 0;
+      const closing = row[columnIndex['Closing Cash']] || 0;
+      
+      if (closing > 0 && opening > 0 && closing < opening * 0.5) {
+        anomalies.push({
+          type: 'CASH_DISCREPANCY',
+          field: 'Closing Cash',
+          row: rowNumber,
+          value: closing,
+          message: 'Closing cash is less than 50% of opening cash'
+        });
+      }
+    }
+  });
   
-  Logger.log('Subfolders scanned: ' + subcarpetasEscaneadas);
-  return cache;
+  return anomalies;
 }
 
 // Export functions for testing and external use
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    procesarCorreos,
-    procesarMisFechas,
-    reprocesarCorreosFecha,
-    diagnosticarCorreosProblematicos,
-    inicializarIndice,
-    generarIdCorreo,
-    generarNombreArchivo,
-    construirCacheArchivosExistentes
+    updateSpreadsheet,
+    applySpreadsheetUpdates,
+    highlightUpdatedRows,
+    findOrCreateRow,
+    validateFinancialData,
+    getSpreadsheetStats,
+    logSpreadsheetStats,
+    createSpreadsheetBackup,
+    exportDataToCSV,
+    findDataAnomalies
   };
 }
