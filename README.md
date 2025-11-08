@@ -101,6 +101,12 @@ flowchart TB
 The system processes PDFs by converting them to text and extracting structured data:
 
 ```javascript
+/**
+ * Extracts financial data from PDF text content
+ * @param {string} texto - Text content extracted from PDF
+ * @param {string} archivo - Original filename for reference
+ * @returns {Object} Structured financial data
+ */
 function extraerDatosPDF(texto, archivo) {
   const lineaRazon = texto.split('\n')
     .find(l => l.toLowerCase().includes('razon social:') && 
@@ -135,6 +141,10 @@ function extraerDatosPDF(texto, archivo) {
 To handle Google Apps Script's execution limits, I implemented chunked processing:
 
 ```javascript
+/**
+ * Processes the next batch of files
+ * Handles batch management and progress tracking
+ */
 function procesarSiguienteTanda() {
   const props = PropertiesService.getScriptProperties();
   
@@ -146,10 +156,11 @@ function procesarSiguienteTanda() {
   const tandaActual = parseInt(props.getProperty('tanda_actual') || '1');
   const totalProcesados = parseInt(props.getProperty('archivos_procesados') || '0');
   
-  Logger.log(`Batch ${tandaActual} - Total processed: ${totalProcesados}`);
+  Logger.log('=== BATCH ' + tandaActual + ' ===');
+  Logger.log('Total processed: ' + totalProcesados + ' files');
   
   // Process files in batches of 18 with 30-second delays
-  const tandaArchivos = obtenerArchivosPendientes(CONFIG.TANDA_SIZE);
+  const tandaArchivos = obtenerArchivosPendientes(CONFIG.BATCH_SIZE);
   const resultados = procesarArchivos(tandaArchivos);
   
   // Update progress and schedule next batch if needed
@@ -163,13 +174,21 @@ function procesarSiguienteTanda() {
 Added custom menus and status monitoring for easy operation:
 
 ```javascript
+/**
+ * Creates custom menu on spreadsheet open
+ * Provides easy access to processing controls
+ */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('PDF Processor')
     .addItem('Start Processing', 'iniciarProcesamiento')
     .addItem('View Status', 'verEstado')
+    .addSeparator()
     .addItem('Pause', 'pausar')
-    .addItem('Process Date', 'mostrarDialogoFecha')
+    .addItem('Resume', 'reanudar')
+    .addSeparator()
+    .addItem('Process Specific Date', 'mostrarDialogoFecha')
+    .addItem('View Available Folders', 'mostrarCarpetasDisponibles')
     .addToUi();
 }
 ```
@@ -228,14 +247,15 @@ function onOpen() {
 // Start full automated processing
 iniciarProcesamiento();
 
-// Process specific date
+// Process specific date folder
 procesarCarpeta("2025-07-22");
 
 // Check system status
 verEstado();
 
-// Process from spreadsheet cell
-// Add "FECHA_PROCESAR: 2025-07-22" in column A
+// Pause/resume processing
+pausar();
+reanudar();
 ```
 
 ---
