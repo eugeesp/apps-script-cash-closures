@@ -1,0 +1,23 @@
+{
+  "name": "cashflow-automator",
+  "version": "2.1.0",
+  "description": "Automated PDF processing system for financial closures in Google Workspace",
+  "main": "src/core-engine.js",
+  "scripts": {
+    "test": "echo \"Tests require Google Apps Script environment\"",
+    "docs": "echo \"Documentation available in README.md\""
+  },
+  "keywords": [
+    "google-apps-script",
+    "automation",
+    "pdf-processing",
+    "financial",
+    "google-workspace"
+  ],
+  "author": "Tu Nombre",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuusuario/cashflow-automator"
+  }
+}
