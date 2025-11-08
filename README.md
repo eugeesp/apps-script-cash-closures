@@ -1,3 +1,4 @@
+![GitHub code size](https://img.shields.io/github/languages/code-size/eugeesp/cashflow-automator)
 ![GitHub last commit](https://img.shields.io/github/last-commit/eugeesp/cashflow-automator)
 
 # CashFlow Automator
