@@ -44,52 +44,26 @@
 ## Technical Architecture
 
 ```mermaid
+
 flowchart TB
-    subgraph sources[Input Sources]
-        A[Gmail Inbox]
-        B[Google Drive]
-    end
+    A[📧 Gmail Inbox] --> B[Email Processor]
+    C[📁 Google Drive] --> D[PDF Processing Engine]
     
-    subgraph processing[Processing Pipeline]
-        C[Email Processor]
-        D[PDF to Text Converter]
-        E[Data Extraction Engine]
-        F[Data Validation]
-    end
+    B --> E[File Organizer]
+    D --> F[Data Extraction]
     
-    subgraph storage[Storage & Organization]
-        G[File Organizer]
-        H[Date-Based Folders]
-        I[Google Sheets Database]
-    end
+    F --> G[Data Validation]
+    G --> H[📊 Google Sheets]
     
-    subgraph control[Control System]
-        J[UI Menu Controls]
-        K[Batch Scheduler]
-        L[Status Monitor]
-        M[Error Logger]
-    end
+    E --> I[🗂️ Date-Based Folders]
     
-    A -->|Poll for new emails| C
-    B -->|Scan for PDFs| D
+    J[🎛️ UI Controls] --> K[Batch Scheduler]
+    K --> D
     
-    C -->|Extract attachments| D
-    D -->|Convert to text| E
-    E -->|Parse financial data| F
-    
-    F -->|Write validated data| I
-    D -->|Move processed files| G
-    G -->|Organize by date| H
-    
-    J -->|Configure processing| K
-    K -->|Schedule batches| D
-    K -->|Monitor execution| L
-    F -->|Log errors| M
-    
-    style sources fill:#e3f2fd
-    style processing fill:#f3e5f5
-    style storage fill:#e8f5e9
-    style control fill:#fff3e0
+    style A fill:#ea4335
+    style C fill:#34a853
+    style H fill:#0f9d58
+    style J fill:#4285f4
 ```
 
 ---
